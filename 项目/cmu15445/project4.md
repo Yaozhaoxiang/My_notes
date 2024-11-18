@@ -1,14 +1,13 @@
 # Project #4 - Concurrency Control
 ## Overview
 
-在这个项目中，你将通过实现乐观多版本并发控制（MVOCC）为 BusTub 添加事务支持。该项目包括四个任务、两个可选的加分任务和一个排行榜基准测试。
+在这个项目中，你将通过实现乐观多版本并发控制（MVCC）为 BusTub 添加事务支持。该项目包括四个任务、两个可选的加分任务和一个排行榜基准测试。
 
 任务 #1 - 时间戳
 任务 #2 - 存储格式和顺序扫描
 任务 #3 - 多版本并发控制执行器
 任务 #4 - 主键索引
-★加分任务 #1 - 回滚★
-★加分任务 #2 - 串行化验证★
+
 
 该项目必须个人独立完成（即不允许组队）。在开始之前，请运行 git pull public master 并重新运行 cmake 以重新配置 Makefile。
 
@@ -566,6 +565,59 @@ Next就要判断是不是自我修改了：
 
 参考上面的思路，并记住：如果一个事务已提交/中止，并且不包含对正在进行的事务可见的任何撤销日志，你可以直接从事务映射中移除它。
 
+```cpp
+void TransactionManager::GarbageCollection() {
+  // 每个事务可以删除的日志数量
+  std::unordered_map<txn_id_t, unsigned> txn_invisible_log_num;
+  // 拿到所有的table
+  auto table_names = catalog_->GetTableNames();
+  for (const auto &table_name : table_names) {
+    auto table_info = catalog_->GetTable(table_name);
+    auto it = table_info->table_->MakeIterator();
+    // 遍历一个表中所有的tuple
+    while (!it.IsEnd()) {
+      bool should_be_deleted = false;
+      // 判断当前表堆 tuple的时间戳，如果小于watermark，则表示链表后面的都要删除
+      if (table_info->table_->GetTupleMeta(it.GetRID()).ts_ <= running_txns_.GetWatermark()) {
+        should_be_deleted = true;
+      }
+      // 拿到第一个link
+      auto undo_link = GetUndoLink(it.GetRID());
+      while (undo_link.has_value() && undo_link->IsValid()) {
+        if (!undo_link.has_value()) {
+          break;
+        }
+        auto undo_log = GetUndoLogOptional(undo_link.value());
+        if (!undo_log.has_value()) {
+          break;
+        }
+        if (should_be_deleted) {
+          txn_invisible_log_num[undo_link->prev_txn_] += 1;
+        }
+        if (undo_log->ts_ <= running_txns_.GetWatermark()) {
+          should_be_deleted = true;
+        }
+        undo_link = undo_log->prev_version_;
+      }
+      ++it;
+    }
+  }
+
+  std::vector<txn_id_t> delete_ids;
+  for (const auto &pair : txn_map_) {
+    if (txn_invisible_log_num[pair.second->txn_id_] == pair.second->GetUndoLogNum() &&
+        (pair.second->state_ == TransactionState::COMMITTED || pair.second->state_ == TransactionState::ABORTED)) {
+      pair.second->ClearUndoLog();
+      delete_ids.push_back(pair.first);
+    }
+  }
+  for (auto id : delete_ids) {
+    txn_map_.erase(id);
+  }
+  // UNIMPLEMENTED("not implemented");
+}
+```
+
 ## Task #4 - Primary Key Index 主键索引
 BusTub 支持主键索引，可以以下述方式创建：
 
@@ -574,6 +626,8 @@ CREATE TABLE t1(v1 int PRIMARY KEY);
 CREATE TABLE t1(v1 int, v2 int, PRIMARY KEY(v1, v2));
 ```
 当在创建表时指定了主键，BusTub 将自动创建一个其 is_primary_key 属性设置为 true 的索引。一个表最多有一个主键索引。主键索引确保了主键的唯一性。在这个任务中，你需要处理执行器中的主键索引。测试用例不会使用 CREATE INDEX 创建次级索引，因此在这个任务中你不需要维护次级索引
+
+
 
 ### 4.0 Index Scan 索引扫描
 
@@ -644,6 +698,8 @@ CREATE TABLE t1(v1 int, v2 int, PRIMARY KEY(v1, v2));
 写到这里已经拿到 80 分了，4.2和4.3暂时不做了，后面再补
 ![](./图片/res_80.png)
 
+
+****************************************************** 分割线
 
 
 
