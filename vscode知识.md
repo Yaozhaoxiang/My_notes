@@ -48,7 +48,7 @@ launch: 配置调试器的行为，以便在开发过程中调试代码。
             "type": "cppdbg",
             "request": "launch",
             "program": "${workspaceFolder}/path/to/your/${fileBasenameNoExtension}", // 可执行文件路径
-            "args": [],
+            "args": [], // 在这里输入命令行参数，比如 "args": ["abc.txt"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
