@@ -233,7 +233,7 @@ UpdateExecutor 修改指定表中的现有元组。执行器将产生一个整�
 
 提示：
 
-+ 为了实现更新，先删除受影响的元组，然后再插入一个新的元组。除非你在实现项目 4 的排行榜优化，否则不要使用 TableHeap UpdateTupleInplaceUnsafe 函数。
++ 为了实现更新，**先删除受影响的元组，然后再插入一个新的元组**。除非你在实现项目 4 的排行榜优化，否则不要使用 TableHeap UpdateTupleInplaceUnsafe 函数。
 
 **Delete**
 DeletePlanNode 可以通过 DELETE 语句来规划。它只有一个子节点，包含要从表中删除的记录。你的删除执行器应该产生一个表示从表中删除了多少行的整数输出。它还需要更新受影响的索引。
@@ -309,7 +309,7 @@ IndexScan { index_oid=0, filter=(#0.0=1) } | (t1.v1:INTEGER, t1.v2:INTEGER, t1.v
 
 实现此优化规则的简要步骤如下：
 
-1. 启用 SeqScan 中的谓词下推：我们可以在 SeqScanExecutor 中实现一个谓词过滤器，以便后来的索引扫描节点具有谓词。我们已经在优化器规则 merge_filter_scan.cpp 中为你启用了 MergeFilterScan 优化规则。
+1. 启用 SeqScan 中的**谓词下推**：我们可以在 SeqScanExecutor 中实现一个谓词过滤器，以便后来的索引扫描节点具有谓词。我们已经在优化器规则 merge_filter_scan.cpp 中为你启用了 MergeFilterScan 优化规则。
 2. 使用索引：你可以检查谓词中的过滤列。如果恰好存在索引，则创建一个 IndexScanPlanNode。注意，为了获得满分，你只需要支持在谓词中有单一等值测试的情况（例如 WHERE v1 = 1）。查询 SELECT * FROM t1 WHERE v1 = 1 AND v2 = 2 应该仍然使用顺序扫描，因此你不需要分割谓词。
 
 请查阅优化器规则实现指南以了解实现优化器规则的详细信息。

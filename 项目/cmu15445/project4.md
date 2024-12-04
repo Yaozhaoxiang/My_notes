@@ -65,8 +65,7 @@
 
 Watermark用来追踪所有处于RUNNING状态的最小txn read ts, 这将为Task3的GC提供支持。
 
-我们需要实现
-的算法，更新最小read ts.
+我们需要实现的算法，更新最小read ts.
 
 事务提交后，应该从Watermark中移除read ts（RemoveTxn）
 事务开启后，应该向Watermark中添加read ts（AddTxn）
