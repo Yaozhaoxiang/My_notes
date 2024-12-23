@@ -244,8 +244,78 @@ Codename:   jammy //ubuntu的代号名称
    2. 使用 ss 或 netstat 命令
     如果你特别关心网络套接字，ss 或 netstat 可以帮助查看进程打开的网络连接对应的文件描述符。
     `ss -p`
+20. ps 显示当前系统的进程状态
+
+ps命令经常会与kill命令搭配使用，以中断和删除不必要的服务进程
+
+-a 显示所有进程信息
+-aux 显示所有包含其他使用者的进程
+
+结合输出重定向，将当前进程信息保留备份至指定文件：
+ps aux > file.txt
+
+结合管道操作符，将当前系统运行状态中指定的进程信息过滤出来：
+ps -ef | grep ssh
+
+查看当前占用内存最高的进程
+ps aux --sort=-%mem | head -n 2
+
+--sort=-%mem:
+  + --sort 选项用于指定根据哪个字段对输出进行排序。
+  + -%mem 表示按照 %MEM 列（即进程占用的物理内存百分比）进行降序排序（从高到低）。这里的 - 符号表示降序；如果去掉 -，则为升序。
+
+head -n 2:
+  + head 命令用于显示文件或标准输入的开头部分。
+  + -n 选项指定了要显示的行数。2 表示只显示前两行。
+
+21. top命令
+
+top 是一个在 Linux 和其他类 Unix 系统上常用的实时系统监控工具。它提供了一个动态的、交互式的实时视图，显示系统的整体性能信息以及正在运行的进程的相关信息。
+
+top [-] [d delay] [q] [c] [S] [s] [i] [n] [b]
+
+参数说明：
+
+-d <秒数>：指定 top 命令的刷新时间间隔，单位为秒。
+-n <次数>：指定 top 命令运行的次数后自动退出。
+-p <进程ID>：仅显示指定进程ID的信息。
+-u <用户名>：仅显示指定用户名的进程信息。
+-H：在进程信息中显示线程详细信息。
+-i：不显示闲置（idle）或无用的进程。
+-b：以批处理（batch）模式运行，直接将结果输出到文件。
+-c：显示完整的命令行而不截断。
+-S：累计显示进程的 CPU 使用时间。
+
+22. ulimit
+
+用来设置和查看各种资源限制，包括最大文件大小、最大进程数、最大打开文件数等等
+
+`ulimit [-aHS] [-c <core file>][-d <data size>][-f <file size>][-m <memory size>][-n <number of files>][-p <buffer size>][-s <stack size>][-t <time>][-u username|resource|block|core|data|filesize|process|stack|cputime]`
+
+-a：显示所有资源限制。
+-c：设置core文件的大小限制。
+-d：设置数据段大小限制。
+-f：设置文件大小限制。
+-m：设置内存大小限制。
+-n：设置打开文件数限制。
+-p：设置缓冲区大小限制。
+-s：设置栈大小限制。
+-t：设置CPU时间限制。
+-u username|resource|block|core|data|filesize|process|stack|cputime：指定要修改的用户或资源类型以及对应的限制值。
+
+23. 移动文件
+
+具体操作如下：
+
+cd /mnt转到 /mnt 目录下，你可以看到自己的盘信息。
 
 
+找到你想转到wsl子系统下的文件。例如我想将下载的blast文件转到子系统下。我需要的文件在以下路劲下
+/mnt/c/Users/86184/Downloads
+
+选择复制或者移动你的文件到指定目录下，可以使用cp也可以使用mv，这里使用的是mv。
+
+mv /mnt/c/Users/86184/Downloads/ncbi-blast-2.13.0+-x64-arm-linux.tar.gz /home/
 
 
 
@@ -370,10 +440,6 @@ Codename:   jammy //ubuntu的代号名称
 117 @file 
 118 可以将选项集中到一个文件中，然后使用这个@file选项载入。
 ```
-
-1.  pwd 显示当前路径
-print working directory
-
 
 
 
