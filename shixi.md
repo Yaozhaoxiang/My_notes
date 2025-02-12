@@ -122,7 +122,11 @@ main函数中有一个宏定义，使用了 #define func(){};
 + 每个Rank进程都创建两个TCP服务监听端口，端口1为了让其他Rank来凝结到本地，端口2让root连接。
 + root线程建立一个监听端口，等待所有rank连接
 + root通过使用UniqueID建立Socket监听，其他rank通过这个链接root线程。
-+ 
++ 发送本地rank的服务器监听端口1给root线程进行一个汇总，统一管理，此时Root线程知道了所有的rank的监听端口1的socket；
++ 在root线程中，按照rank顺序建立ring，然后rank0发送各个地址到其他rank上；
++建立一个环后，通过allgather同步所有的rank的ip和port，每个rank就有了全局所有的rank的ip和port，创建的bootstrap网络会报错在ncclComm里面。
+
+## 2. 物理拓扑
 
 
 
