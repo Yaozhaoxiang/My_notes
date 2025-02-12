@@ -36,27 +36,36 @@
 36.   hostname：显示或设置计算机的主机名
 37.   free：显示系统内存使用情况
  
-## 1. 进程查看命令
+
+下载包 ： wget
+安装包 ： 
++ 包管理器安装
+    + sudo apt install nginx
+    + sudo apt remove ngix
++ wget
+    + tar -zxvf nginx-1.24.0.tar.gz
+    + cd nginx-1.24.0
+    + ./configure
+
+查看服务器状态：
++ top 实时显示系统中各个进程的资源占用状况
++ lscpu 显示 CPU 的详细信息
++ vmstat命令
 
 
+修改文件权限： chmod [三位数字权限码] 文件名
+读权限用4表示，写权限用2表示，执行权限用1表示，没有权限用0表示
++ 将文件权限设置为**所有者**有读、写、执行权限，**所属组**有读、执行权限，**其他用户**有读权限
+chmod 754 test.txt
 
 
++ 将文件权限设置为所有用户都有读、写、执行权限
+chmod 777 test.txt
 
 
+查看linux版本：cat /etc/os-release 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
+git 查看某行代码作者：git blame 是专门用于查看文件中每一行代码最后一次修改的作者、提交哈希、提交时间等信息的命令。
 
 
 
