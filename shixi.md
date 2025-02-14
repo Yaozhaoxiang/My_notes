@@ -190,7 +190,10 @@ mpirun 提供了 -x 选项，能够将本地环境变量传递到所有的计算
 > mpirun -n 2 -N 1 --hostfile hostfile -x LD_LIBRARY_PATH=$(SDC_CCL)/build/lib ./build/hello_sdc
 
 
-## 2. 物理拓扑
+git常用命令：
+git cherry-pick commit-id : 将一条commit合并到当前分支；
+git stash : 暂存修改代码
+git stash pop : 恢复暂存代码
 
 
 
