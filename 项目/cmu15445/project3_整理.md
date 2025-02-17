@@ -134,6 +134,12 @@ BusTub optimizer 是一个 Rule-based 优化器。我们将不同的 Rule 按顺
 2. Materialization Model. 所有算子立即计算出所有结果并返回。和 Iterator Model 相反。这种模型的弊端显而易见，当数据量较大时，内存占用很高。但减少了函数调用的开销。比较适合查询数据量较小的 OLTP workloads。
 3. Vectorization Model. 对上面两种模型的中和，一次调用返回一批数据。利于 SIMD 加速。目前比较先进的 OLAP 数据库都采用这种模型。
 
+> 虚函数调用造成 cache miss 等问题
+> CPU 为了提高访问内存的速度，会使用高速缓存（cache）来存储最近访问过的数据和指令。当程序需要访问内存中的数据或指令时，首先会在 cache 中查找，如果找到则称为 cache hit，直接从 cache 中读取数据，速度很快；如果未找到则称为 cache miss，需要从主内存中读取数据，这会带来较大的延迟。
+> 在虚函数调用时，由于需要通过 vptr 查找虚函数表，再从虚函数表中查找虚函数地址，这涉及到多次内存访问。而且，不同对象的虚函数表可能位于不同的内存位置，当程序频繁调用不同对象的虚函数时，很容易导致 cache miss。
+
+
+
 Bustub 采用的是 Iterator Model。
 
 此外，算子的执行方向也有两种：

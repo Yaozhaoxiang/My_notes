@@ -52,6 +52,32 @@ Xv6 通过使用 trampoline  跳板页来满足这些要求。跳板页包含 `u
 
 它首先改变 `stvec`，使得在内核中的中断将由 `kernelvec` 而不是 `uservec` 处理。它保存 `sepc` 寄存器（保存的用户程序计数器），因为 `usertrap` 可能会调用 `yield` 切换到另一个进程的内核线程，而那个进程可能会返回用户空间，在此过程中会修改 `sepc`。
 
+加载：
+```cpp
+struct trapframe {
+  /*   0 */ uint64 kernel_satp;   // kernel page table
+  /*   8 */ uint64 kernel_sp;     // top of process's kernel stack
+  /*  16 */ uint64 kernel_trap;   // usertrap()
+  /*  24 */ uint64 epc;           // saved user program counter
+  /*  32 */ uint64 kernel_hartid; // saved kernel tp
+  /*  40 */ uint64 ra;
+```
+1. uint64 kernel_satp;
++ 含义：该成员存储的是内核页表的 satp（Supervisor Address Translation and Protection）寄存器的值。
++ 作用：satp 寄存器用于指定当前使用的页表的基地址，在从用户态陷入内核态时，需要切换到内核页表，因此需要保存内核页表的 satp 值，以便在内核态正确地进行地址翻译。当陷阱处理完成后，可能还需要恢复到用户页表继续执行用户程序，此时这个值就起到了记录内核页表状态的作用。
+2. uint64 kernel_sp;
++ 含义：该成员表示进程内核栈的栈顶地址。
++ 作用：当用户进程发生陷阱进入内核态时，需要切换到内核栈来执行内核代码，因为在内核态不能使用用户栈，否则可能会导致安全问题和栈溢出等错误。kernel_sp 记录了进程内核栈的栈顶位置，这样在进入内核态时可以直接切换到这个栈继续执行内核代码，在陷阱处理完成后，还可以根据需要恢复到用户栈继续执行用户程序。
+3. uint64 kernel_trap;
++ 含义：该成员存储的是 usertrap() 函数的地址。
++ 作用：usertrap() 是用户态陷阱处理函数，当用户进程发生系统调用、异常或中断时，会跳转到这个函数来处理。通过保存 usertrap() 函数的地址，在进入内核态后可以直接跳转到该函数开始执行陷阱处理逻辑。
+4. uint64 epc;
++ 含义：epc 是 “Exception Program Counter” 的缩写，该成员保存的是用户程序在发生陷阱时的程序计数器的值。
++ 作用：程序计数器（PC）指向当前正在执行的指令的地址，当发生陷阱时，需要保存用户程序的当前执行位置，以便在陷阱处理完成后能够从这个位置继续执行用户程序。epc 就记录了这个位置，在陷阱处理结束后，将 epc 的值恢复到程序计数器中，用户程序就可以继续正常执行。
+5. uint64 kernel_hartid;
++ 含义：该成员保存的是内核的 tp（Thread Pointer）寄存器的值，tp 通常用于存储当前硬件线程（Hart）的 ID。
++ 作用：在多核系统中，每个硬件线程都有一个唯一的 ID，通过 tp 寄存器可以快速访问这个 ID。在用户进程发生陷阱进入内核态时，需要保存这个值，以便在内核态的代码中能够正确识别当前运
+
 
 ### 4.3 代码：调用系统调用
 

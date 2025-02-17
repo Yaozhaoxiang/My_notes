@@ -170,7 +170,7 @@
 
 此时，这个trace系统调用就完成了！
 
-![alt text](image-1.png)
+![alt text](./图片/image-1.png)
 
 
 ## sysinfo
@@ -361,6 +361,7 @@
        addr：这是用户空间的目标地址，数据需要复制到这个地址
        (char*)&st：这是内核空间中 st 结构体的地址，数据将从这个地址开始复制。
        sizeof(st)：这是要复制的数据的大小，以字节为单位。即 st 结构体的大小。
+    先找到addr的物理地址，使用walkaddr，然后复制。
 7. 最后，`sys_sysinfo(void)`如下：
 ```cpp
 uint64
