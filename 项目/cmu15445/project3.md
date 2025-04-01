@@ -1704,6 +1704,42 @@ auto SortExecutor::Next(Tuple *tuple, RID *rid) -> bool {
 2. 限制
 LimitPlanNode 中存放着 limit的大小，然后记录调用子执行器的次数cnt，当cnt达到limit或者子执行器返回false时，返回false.
 
+```cpp
+#include "execution/executors/limit_executor.h"
+
+namespace bustub {
+
+LimitExecutor::LimitExecutor(ExecutorContext *exec_ctx, const LimitPlanNode *plan,
+                             std::unique_ptr<AbstractExecutor> &&child_executor)
+    : AbstractExecutor(exec_ctx), plan_(plan), child_executor_(std::move(child_executor)) {}
+
+void LimitExecutor::Init() {
+  // throw NotImplementedException("LimitExecutor is not implemented");
+  child_executor_->Init();
+  Tuple tuple{};
+  RID rid{};
+  std::size_t limit = plan_->GetLimit();
+  std::size_t count = 0;
+  while (count < limit && child_executor_->Next(&tuple, &rid)) {
+    count++;
+    tuples_.emplace_back(tuple);
+  }
+  iter_ = tuples_.begin();
+}
+
+auto LimitExecutor::Next(Tuple *tuple, RID *rid) -> bool {
+  if (!tuples_.empty() && iter_ != tuples_.end()) {
+    *tuple = *iter_;
+    ++iter_;
+    return true;
+  }
+  return false;
+}
+
+}  // namespace bustub
+
+```
+
 3. Top-N 优化规则
 为什么要将order-by+limit优化成Top-N呢？考虑时空复杂度：Top-N的时间复杂度为 O(NlogK), 空间复杂度为O(K). 而order-by的时间复杂度为(NlogN), 空间复杂度为O(N)
 . 无论在时间还是空间上，Top-N都是更好的选择。
@@ -1720,6 +1756,61 @@ order-by为降序时，需要输出**前k个最大**值，此时应该建大堆�
 根据以上规则，遍历完table, 我们就能维护出k个最大tuple, 不过堆顶的tuple是k个tuple中最小中，我们需要将所有tuple pop到vector中，并反转tuple(也可以在Next函数中倒着遍历vector).
 
 总之，order-by为asc时，我们需要建大堆，使比较器在满足<=时返回true. order-by为desc时，我们需要建小堆，使比较器在满足>=时返回true. 这个规则和之前实现TupleCompare一致，所以直接拿来就行。
+
+```cpp
+class TopNExecutor : public AbstractExecutor {
+
+ private:
+  /** The TopN plan node to be executed */
+  const TopNPlanNode *plan_;
+  /** The child executor from which tuples are obtained */
+  std::unique_ptr<AbstractExecutor> child_executor_;
+
+  std::priority_queue<Tuple, std::vector<Tuple>, Comparator> heap_;
+  std::stack<Tuple> top_entries_;
+};
+```
+
+```cpp
+TopNExecutor::TopNExecutor(ExecutorContext *exec_ctx, const TopNPlanNode *plan,
+                           std::unique_ptr<AbstractExecutor> &&child_executor)
+    : AbstractExecutor(exec_ctx), plan_(plan), child_executor_(std::move(child_executor)) {
+  // heap_ = std::priority_queue<Tuple, std::vector<Tuple>, Comparator>(Comparator(&this->GetOutputSchema(),
+  // plan_->GetOrderBy()));
+}
+// 升序使用最大堆，因为要保留最小值，所以每次 pop最大值
+// 降序使用最小堆，因为要保留最大值，所以每次 pop最小值
+void TopNExecutor::Init() {
+  heap_ = std::priority_queue<Tuple, std::vector<Tuple>, Comparator>(
+      Comparator(&this->GetOutputSchema(), plan_->GetOrderBy()));
+  // throw NotImplementedException("TopNExecutor is not implemented");
+  child_executor_->Init();
+  Tuple tuple{};
+  RID rid{};
+  while (child_executor_->Next(&tuple, &rid)) {
+    heap_.push(tuple);
+    if (heap_.size() > plan_->GetN()) {
+      heap_.pop();
+    }
+  }
+  // 假如是升序，此时堆中保存着k个最小值，此时堆顶是k个中最大的，所以需要倒叙一遍
+  while (!heap_.empty()) {
+    top_entries_.push(heap_.top());
+    heap_.pop();
+  }
+}
+
+auto TopNExecutor::Next(Tuple *tuple, RID *rid) -> bool {
+  if (top_entries_.empty()) {
+    return false;
+  }
+  *tuple = top_entries_.top();
+  top_entries_.pop();
+  return true;
+}
+auto TopNExecutor::GetNumInHeap() -> size_t { return heap_.size(); };
+
+```
 
 
 4. 窗口函数
