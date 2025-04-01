@@ -102,12 +102,194 @@ int main() {
 
 ## 3. O1/O2编译下，变量的内容突然变为0
 
-main函数中有一个宏定义，使用了 #define func(){};
-宏定义中的大括号导致其中声明的变量全部变为临时变量。这些临时变量的内存空间在O0时不会被回收，但在O1时会被回收，从而导致内存踩踏的发生。
+```cpp
+static inline void ringRS(ScclKernelArgs* args){
+    if(args->size & args->comm.nrank!=0){
+        return;
+    }
+    const int nrank = args->com.nranks;
+    const ScclRing * ring = &args->channel.ring;
+
+    PrimsHandle prims = {
+        args->comm.rank,
+        args->src,
+        args->dst,
+        args->dtypr,
+        1,
+        1,
+        &args->channel.conns[ring->prev],
+        &args->channel.conns[ring->next],
+        SCCL_SLICE_SIZE,
+        args->sram,
+        args->sram_size,
+        false,false,false,false
+    };
+    LOGI("prims.send->buffer->tensor_ptr address %s, ring->next is %d",FMT_ADDR(prims.send->buffer->tensor_ptr),ring->next);
+
+    size_t part_size = args->size;
+    size_t part;
+    size_t src_offset;
+    size_t dst_offset;
+
+    LOGI("prims.send->buffer->tensor_ptr address %s, ring->next is %d",FMT_ADDR(prims.send->buffer->tensor_ptr),ring->next);
+
+    for(size_t chunk_base = 0;chunk_base < part_size; chunk_base += SCCL_CHUNK_SIZE){
+        size_t chunk_size = MIN(part_size - chunk_base,SCCL_CHUNK_SIZE);
+
+        part = ring->rankmap[nranks-1];
+        src_offset = chunk_base+part*part_size;
+        dst_offset = chunk_base;
+        LOGI("prims.send->buffer->tensor_ptr address %s, ring->next is %d",FMT_ADDR(prims.send->buffer->tensor_ptr),ring->next);
+        
+        pSend(&prims, src_offset,dst_offset,chunk_size);
+        for(itn i=2;i<nranks;i++){
+            part=ring->rankmap[nranks-i];
+            src_offset=chunk_base+part*part_size;
+            dst_offset=chunk_base;
+            pRecvEeduceSend(&prims,src_offset,dst_offset,chunk_size);
+        }
+        part=ring->rankmap[0];
+        src_offset=chunk_base+part*part_size;
+        dst_offset=chunk_base;
+        pRecvReduceCopy(&prims,src_offset,dst_offset,chunk_size);
+    }
+}
+```
+
+其中的FMT_ADDR是一个宏函数，函数内存在静态数组与C++对象：
+
+```cpp
+template<typrname T,int FMT_LENGTH=FMT_LENGTH>
+static const ccl::string<FMT_LENGTH> _fmtSdcAddr(const T*addr){
+    uint64_t uint_addr = (uint64_t) addr;
+
+    uint64_t die_id = (uint_addr>>38) & 0x3;
+    uint64_t tile_id = (uint_addr>>40) & 0xf;
+
+    char buffer[FMT_LENGTH];
+    sprintf(
+        buffer, "0x%02x\'%04x\'%04x (die #%d, %s, %s)",
+        ((uint_addr>>32)&0xFF),
+        ((uint_addr>>16)&0XFFFF),
+        ((uint_addr)&0xFFFF),
+        die_id,
+        getTileName(tile_id).c_str(),
+        getPhyOffsetStr(uint_addr).c_str()
+    );
+    const ccl::string<FMT_LENGTH> fmt_str = buffer;
+    LOGT("buffer addr %p",buffer);
+    LOGT("fmt_str addr %p",&fmt_str);
+    return fmt_str
+}
+#defint FMT_ADDR(addr) (__fmtSdcAddr(addr).c_str())
+```
+
+其中三个LOGI语句，他们的内容完全一样，均为打印 prims.send->buffer->tensor_ptr 的地址，这一地址经过 FMT_ADDR 的调用。在 O0编译选项下，输出结果一样：
+
+```cpp
+[ring RS]:prims.send->buffer->tensor_ptr address 0x04'1000'0000 (die #0, compute tile #0, ??? B), ring->next is 2
+[ring RS]:prims.send->buffer->tensor_ptr address 0x04'1000'0000 (die #0, compute tile #0, ??? B), ring->next is 2
+[ring RS]:prims.send->buffer->tensor_ptr address 0x04'1000'0000 (die #0, compute tile #0, ??? B), ring->next is 2
+```
+
+但在O1/O2编译下，输出是这样的：
+```cpp
+[ring RS]:prims.send->buffer->tensor_ptr address 0x04'1000'0000 (die #0, compute tile #0, ??? B), ring->next is 2
+[ring RS]:prims.send->buffer->tensor_ptr address 0x04'0000'0000 (die #0, tile local, -256MB), ring->next is 2
+[ring RS]:prims.send->buffer->tensor_ptr address 0x04'0000'0000 (die #0, tile local, -256MB), ring->next is 2
+```
+
+并且tensor_ptr被修改的时刻与 FMT_ADDR的时候有关。此处程序一旦出现第二次FMT_ADDR,那么tensor_ptr的取值必定被修改。
+
+打印 O0与 O1的变量地址空间，结果分别为：
+
+O0:
+```CPP
+[rank 0] prims.send->buffer->tensor_ptr address 0x04'1000'0000 (die #0, compute tile #0, ??? B), ring->next is 2
+[rank 0] buffer addr 00000000FFFF470
+[rnak 0] fmt_str addr 00000000FFFF850
+[rank 0] &prims.send->buffer->tensor_ptr address 0x00'0fff'fd18 (die #0, title local, -0.73KB),ring->next is 2
+```
+
+O1:
+```CPP
+[rank 0] prims.send->buffer->tensor_ptr address 0x04'1020'0000 (die #0, compute tile #0, ??? B), ring->next is 3
+[rank 0] buffer addr 00000000FFFF968
+[rnak 0] fmt_str addr 00000000FFFFCB8
+[rank 0] &prims.send->buffer->tensor_ptr address 0x00'0fff'fd30 (die #0, title local, -0.70KB),ring->next is 3
+```
+```CPP
+[rank 0] prims.send->buffer->tensor_ptr address 0x04'1030'0000 (die #0, compute tile #0, ??? B), ring->next is 1
+[rank 0] buffer addr 00000000FFFF960
+[rnak 0] fmt_str addr 00000000FFFFCB8
+[rank 0] &prims.send->buffer->tensor_ptr address 0x00'0fff'fce0 (die #0, title local, -0.78KB),ring->next is 1
+```
+
+其中fmt_str包含的长度为200的char[]变量，但物理地址距离 &tensor_ptr 明显小于200，导致内存践踏，&tensor_ptr 存储的值被覆写。
+
+经过逐行排查代码，发现在main函数中的一个宏定义中，使用下面的语句：
+
+```cpp
+#define INIT_KERNEL_ARGS(a,b,nrank,d,e,,g,h) {
+    ScclConn _conns[nranks];
+    args.channel.conns = _conns;
+    TensorDescriptor t[nranks];
+    for(int i=0;i<nranks;i++){
+        _conns[i].buffer = &t[i];
+    }
+    int _rankmap[nranks];
+    args.channel.ring.rankmap = _rankmap;
+    _init_kernel_args(a,b,nranks,d,e,f,g,h);
+}
+
+```
+
+宏定义中的大括号导致其中声明的变量全部为临时变量。这些临时变量的内存空间在 O0 时不会被回收，但在 O1 时会被回收，从而导致了内存踩踏的发送。
 
 
+### o0 o1 o2是什么？区别是什么
+
+O0、O1、O2 是编译器的优化等级选项
+
+含义
++ O0：表示不做任何优化，是编译器默认的编译选项。编译器会按照代码编写的原样进行编译，生成的目标代码与源代码几乎是一一对应的关系，便于开发者进行调试。
++ O1：对程序做部分编译优化，编译器会尝试减小生成代码的尺寸，以及缩短执行时间，但并不执行需要占用大量编译时间的优化。
++ O2：是比 O1 更高级的优化选项，会进行更多的优化。Gcc 将执行几乎所有的不包含时间和空间折中的优化，能使程序的编译效率大大提升，从而减少程序的运行时间，达到优化的效果。
 
 
+区别
++ 优化程度
+    + O0：不进行优化，保留所有代码细节和原始结构。
+    + O1：进行有限的优化，如删除死代码、消除未使用的变量等。
+    + O2：在 O1 基础上，还会采用如循环展开、程序内联、常量折叠、公共子表达式消除等更多优化措施，优化更为全面和深入。
+
++ 编译时间
+    + O0：编译时间最短，因为不需要进行任何优化处理。
+    + O1：编译时间比 O0 略长，由于要进行部分优化，需要额外的时间和计算资源。
+    + O2：编译时间比 O1 更长，由于执行了更多复杂的优化操作，需要更多的时间来分析和处理代码
+
++ 目标代码体积
+    + O0：生成的目标代码体积通常较大，因为包含了所有原始代码信息。
+    + O1：相比 O0，目标代码体积有所减小，通过删除死代码等优化手段，减少了不必要的代码。
+    + O2：目标代码体积可能比 O1 更小，也可能更大，一些优化措施如内联函数可能会使代码体积增加，但常量折叠等操作又会减小代码体积。
+
++ 运行效率
+    + O0：运行效率相对较低，因为没有经过优化，程序按照原始代码逻辑执行。
+    + O1：运行效率比 O0 有一定提升，通过一些简单优化提高了执行速度。
+    + O2：运行效率通常比 O1 更高，经过更多优化后，程序的执行路径更高效，能充分利用硬件资源等。
+
+使用：
+```cpp
+gcc -O0 -o test_O0 test.c
+```
+
+比较不同优化选项的编译时间和运行效果
+你可以使用time命令来比较不同优化选项下的编译时间，例如：
+```cpp
+time gcc -O0 -o test_O0 test.c
+time gcc -O1 -o test_O1 test.c
+time gcc -O2 -o test_O2 test.c
+```
 
 
 # 通信组库
