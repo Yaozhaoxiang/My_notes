@@ -13,6 +13,105 @@
 ![](./图片/docker_2.png)
 
 
+## 0. 安装
+
+https://blog.csdn.net/u011278722/article/details/137673353
+
+准备条件
+```bash
+#安装前先卸载操作系统默认安装的docker，
+sudo apt-get remove docker docker-engine docker.io containerd runc
+
+#安装必要支持
+sudo apt install apt-transport-https ca-certificates curl software-properties-common gnupg lsb-release
+```
+
+准备安装
+```bash
+#添加 Docker 官方 GPG key （可能国内现在访问会存在问题）
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+
+# 阿里源（推荐使用阿里的gpg KEY）
+curl -fsSL https://mirrors.aliyun.com/docker-ce/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+
+
+
+#添加 apt 源:
+#Docker官方源
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+
+#阿里apt源
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://mirrors.aliyun.com/docker-ce/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+
+#更新源
+sudo apt update
+sudo apt-get update
+```
+
+安装Docker
+```bash
+#安装最新版本的Docker
+sudo apt install docker-ce docker-ce-cli containerd.io
+#等待安装完成
+
+#查看Docker版本
+sudo docker version
+
+#查看Docker运行状态
+sudo systemctl status docker
+```
+
+安装Docker 命令补全工具
+```bash
+sudo apt-get install bash-completion
+
+sudo curl -L https://raw.githubusercontent.com/docker/docker-ce/master/components/cli/contrib/completion/bash/docker -o /etc/bash_completion.d/docker.sh
+
+source /etc/bash_completion.d/docker.sh
+```
+
+允许非Root用户执行docker 命令
+当我们安装好了Docker之后，有两种方式来执行docker 命令
+
++ 在docker命令前加上sudo, 比如：sudo docker ps
++ sudo -i 切换至root用户，再执行docker 命令
+
+是不是可以让当前用户在不切root，或者不加sudo 的情况下正常使用 docker 命令呢？答案是有的。
+
+添加docker用户组
+```bash
+sudo groupadd docker
+```
+
+将当前用户添加到用户组
+```bash
+sudo usermod -aG docker $USER
+```
+
+使权限生效
+```bash
+newgrp docker 
+```
+
+测试一下
+```bash
+#查看所有容器
+docker ps -a
+```
+
+最后一步 更新.bashrc文件
+我们需要编辑 ~/.bashrc文件，并在文件末尾增加如下一行,如果不在.bashrc文件中增加下面这一行命令
+```bash
+#如果没有此行命令，你会发现，当你每次打开新的终端
+#你都必须先执行一次 “newgrp docker” 命令
+#否则当前用户还是不可以执行docker命令
+groupadd -f docker
+```
+
+
+
 ## 1. 怎么添加国内镜像源
 
 查看安装的Docker版本 
@@ -38,6 +137,7 @@ sudo docker version
 
 2. 重启Docker
 
+sudo systemctl daemon-reload
 sudo service docker restart
 
 3. 查看添加的国内源是否生效
@@ -60,41 +160,116 @@ systemctl enable docker
 
 https://blog.csdn.net/2301_79849395/article/details/142829852
 
+5. 不能search
+
+```bash
+root@hcss-ecs-4d32:~# docker search mysql
+Error response from daemon: Get "https://index.docker.io/v1/search?q=mysql&n=25": dial tcp 173.255.213.90:443: i/o timeout
+```
+
+> 不能重启网络：
+
+```bash
+root@hcss-ecs-4d32:~# sudo systemctl restart networking
+Failed to restart networking.service: Unit networking.service not found.
+```
+
+在某些现代的 Linux 发行版（尤其是基于 systemd 的系统）中，网络管理通常由 NetworkManager 或 systemd-networkd 等服务来处理，而不是传统的 networking.service。这就是为什么你遇到了 Failed to restart networking.service: Unit networking.service not found 的错误。
+
+解决方法
+1. 检查使用的网络管理工具：
+
+首先，确认你的系统使用的是哪种网络管理工具。你可以检查是否有 NetworkManager 或 systemd-networkd 在运行
+
++ 检查 NetworkManager：
+
+```bash
+sudo systemctl status NetworkManager
+```
+
++ 检查 systemd-networkd
+
+```bash
+sudo systemctl status systemd-networkd
+```
+
+如果使用 NetworkManager：
+
+如果你的系统使用的是 NetworkManager，你可以通过以下命令来重启网络服务
+
+```bash
+sudo systemctl restart NetworkManager
+```
+
+如果使用 systemd-networkd
+
+如果你系统上使用的是 systemd-networkd，则可以重启 systemd-networkd 服务：
+
+```bash
+sudo systemctl restart systemd-networkd
+```
+
+发现还是解决不了：最终解决方法
+
+在Search是使用命令：docker search docker-0.unsee.tech/mysql:5.7
+
+而不是直接docker search [imageName]
+问题原因
+我们在daemon.json文件中配置的镜像地址，只会在docker Pull时被使用，而docker search时使用的仍然是Docker默认搜索地址，在国内就会造成超时。
+
 ## 2. 使用
 
 下载镜像：
 
 检索： docker search
+
 下载： docker pull
+
 列表： docker images
+
 删除： docker rmi 
+
     docker rmi image_id 或者 docker rmi name:tag
 
 在搜索镜像时加上国内源的域名，这样就不用梯子也可以:
+
 docker search docker-0.unsee.tech/mysql:5.7
 
 
 启动容器：
+```txt
 运行：docker run
     -d: 后台启动
     --name: 容器名字
     -p 88:80: 端口映射,外部88->内部80
     --network: 加入自定义网络
+    -v 目录挂载
+```
 查看：docker ps -a
+
 停止：docker stop
+
 启动：docker start
+
 重启：docker restart
+
 状态：docker stats
+
 日志：docker logs
+
 进入：docker exec
-    -it ：交互模式 
-    /bin/bash : bash界面
++ -it ：交互模式 
++ /bin/bash : bash界面
+
 删除：docker rm
 
 
 保存镜像：
+
 提交：docker commit
+
 保存：docker save
+
 加载：docker load
 
 **注意：只有服务器安全组设置可以访问端口，才可以访问；**
@@ -102,10 +277,12 @@ docker search docker-0.unsee.tech/mysql:5.7
 ## 3. dockers存储
 
 目录挂载,外部的目录挂到内部的目录上：
--v /app/nghtml:/usr/share/nginx/html
+
+-v /app/nghtml:/usr/share/nginx/html (外部:内部)
 
 这样启动的时候，外面的目录就是容器内部的目录；如果外面是空的，那么就认为是空的。
 
+> 卷映射相对于目录挂载来讲，会先把内部文件作为默认值；
 
 卷映射： -v ngconf:/etc/nginx
 卷也就是不以 "/" 开始;
@@ -113,8 +290,12 @@ docker search docker-0.unsee.tech/mysql:5.7
 卷映射可以看成，外部刚开始就是内部的一个映射。也就是说刚开始就是复制过来的。
 
 列出所有的卷：`docker volume ls`
+
 列出卷的详情：`docker volume inspect name`
+
 删除卷：`docker volume rm `
+
+
 
 ## 4. docker 网络
 
@@ -214,13 +395,169 @@ secrets:密钥
 
 ![](./图片/docker_7.png)
 
+## 8. 启动mysql
+
+### 1. 启动容器
+
+```bash
+docker run -d -p 3306:3306 --name mysql \
+-v /root/docker/mysql/conf:/etc/mysql/conf.d \
+-v /root/docker/mysql/logs:/var/log/mysql \
+-v /root/docker/mysql/data:/var/lib/mysql \
+-e MYSQL_ROOT_PASSWORD=20010111 \
+--privileged=true \
+mysql:latest
+```
+
+### 2. 进入mysql容器—并登陆mysql
+
+```bash
+格式：docker exec -it   mysql名称   bash
+
+进入mysql容器操作台命令：docker exec -it mysql bash
 
 
 
+登录mysql命令：mysql -u root -p
+
+		输入密码：
+
+```
+
+### 3. 开启远程访问权限
+
+```bash
+命令：use mysql;
+
+命令：select host,user from user;
+
+命令：ALTER USER 'root'@'%' IDENTIFIED WITH mysql_native_password BY '123456';
+
+命令：flush privileges;
+
+
+把root用户的密码改成 mysql_native_password 模式，即可远程连接
 
 
 
+		#创建一个账号-admin，用来进行远程访问；
+		CREATE USER 'admin'@'%' IDENTIFIED BY '123456';
+		 
+		 
+		 赋予所有权限给之前创建的账号:admin
+		GRANT ALL ON *.* TO 'admin'@'%';
+		 
+		 
+		 确认使用密码{123456}登录此账号{admin}
+		 密码尽量复杂，安全性更高。
+		ALTER USER 'admin'@'%' IDENTIFIED WITH mysql_native_password BY '123456';
+		 
+		 
+		 刷新权限
+		FLUSH PRIVILEGES;
+```
 
+### 4. 定位容器位置：
+
+```bash
+命令：whereis mysql
+显示：mysql: /usr/bin/mysql /usr/lib/mysql /etc/mysql /usr/share/mysql
+```
+
+### 5. 退出容器：
+
+```bash
+exit
+```
+
+### 6. 重启容器
+
+```bash
+命令：docker restart mysql
+命令：docker exec -it mysql /bin/bash
+```
+
+## 9. 启动redis
+
+创建挂载目录以及获取 redis.conf 配置文件
+
+```bash
+1. 创建挂载目录
+mkdir -p /docker/redis
+mkdir -p /docker/redis/data
+
+2. 进入挂载目录
+cd /docker/redis
+
+3. 下载 redis.conf 文件
+wget http://download.redis.io/redis-stable/redis.conf
+
+4. 更改 redis.conf 文件的权限
+chmod 777 redis.conf
+```
+
+修改默认的 redis.conf 配置文件
+
+```bash
+vi redis.conf
+```
+
+```bash
+# 这行要注释掉，解除本地连接限制
+bind 127.0.0.1    --> 需要注释掉
+
+# 保护模式是一层安全保护，以避免在互联网上打开的 Redis 实例被访问和利用。
+# 当保护模式打开并且默认用户没有密码时，服务器仅允许在本机的回环连接，其他机器无法连接。
+# 默认为 yes，在生产环境下一般设置为 no，这样可以避免客户端连接时出现超时或连接不上的情况。
+protected-mode no
+
+# 默认 no 为不守护进程模式，docker 部署不需要改为 yes，docker run -d 本身就是后台启动，不然会冲突
+daemonize no
+
+# 设置密码
+requirepass 123456
+
+# 持久化
+appendonly yes
+```
+
+3. docker run 运行 redis 镜像
+
+```bash
+docker run \
+--name redis \
+-p 6379:6379 \
+--restart unless-stopped \
+-v /root/docker/redis/data:/data \
+-v /root/docker/redis/redis.conf:/etc/redis/redis.conf \
+-d redis \
+redis-server /etc/redis/redis.conf \
+--appendonly yes
+```
+
++ redis-server /etc/redis/redis.conf 以配置文件启动redis，加载容器内的conf文件，最终找到的是挂载的目录/usr/local/redis.conf。
++ --appendonly yes 开启redis 持久化
+
+本地连接：
+
+```bash
+docker exec -it [容器名 | 容器ID] bash # 以交互的方式进入容器内部，具体的我这里没解释啦
+#最近准备了一篇文章专门来讲这个
+
+redis-cli
+set k1 v1
+auth ningzaichun #自己设置的密码
+get k1
+```
+
+![](./图片/redis1.png)
+
+
+2）测试外部连接
+
+
+![](./图片/redis2.png)
+![](./图片/redis3.png)
 
 
 
