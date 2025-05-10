@@ -397,6 +397,12 @@ secrets:密钥
 
 ## 8. 启动mysql
 
+要查看所有运行中容器的资源使用情况:
+docker stats
+docker stats <容器ID或名称>
+
+free -h：以人类可读的格式显示内存和交换空间的使用情况。
+
 ### 1. 启动容器
 
 ```bash
@@ -476,6 +482,236 @@ exit
 命令：docker restart mysql
 命令：docker exec -it mysql /bin/bash
 ```
+
+### 7. 配置一主多从
+
+- **step1：在docker中创建并启动MySQL主服务器：**`端口3307`
+
+```shell
+docker run -d \
+-p 3307:3306 \
+-v /root/docker/zc_mysql/master/conf:/etc/mysql/conf.d \
+-v /root/docker/zc_mysql/master/data:/var/lib/mysql \
+-e MYSQL_ROOT_PASSWORD=20010111 \
+--name atguigu-mysql-master \
+mysql:latest
+```
+
+- **step2：创建MySQL主服务器配置文件：** 
+
+默认情况下MySQL的binlog日志是自动开启的，可以通过如下配置定义一些可选配置
+
+```shell
+vim /atguigu/mysql/master/conf/my.cnf
+```
+
+配置如下内容
+
+```properties
+[mysqld]
+# 服务器唯一id，默认值1
+server-id=1
+# 设置日志格式，默认值ROW
+binlog_format=STATEMENT
+# 二进制日志名，默认binlog
+# log-bin=binlog
+# 设置需要复制的数据库，默认复制全部数据库
+#binlog-do-db=mytestdb
+# 设置不需要复制的数据库
+#binlog-ignore-db=mysql
+#binlog-ignore-db=infomation_schema
+```
+
+重启MySQL容器
+
+```shell
+docker restart atguigu-mysql-master
+```
+
+
+`binlog格式说明：`
+
+- binlog_format=STATEMENT：日志记录的是主机数据库的`写指令`，性能高，但是now()之类的函数以及获取系统参数的操作会出现主从数据不同步的问题。
+- binlog_format=ROW（默认）：日志记录的是主机数据库的`写后的数据`，批量操作时性能较差，解决now()或者  user()或者  @@hostname 等操作在主从机器上不一致的问题。
+- binlog_format=MIXED：是以上两种level的混合使用，有函数用ROW，没函数用STATEMENT，但是无法识别系统变量
+
+
+
+`binlog-ignore-db和binlog-do-db的优先级问题：`
+
+![img](assets/0.08703112216569037.png)
+
+
+- **step3：使用命令行登录MySQL主服务器：**
+
+```shell
+#进入容器：env LANG=C.UTF-8 避免容器中显示中文乱码
+docker exec -it atguigu-mysql-master env LANG=C.UTF-8 /bin/bash
+#进入容器内的mysql命令行
+mysql -uroot -p
+#修改默认密码校验方式
+ALTER USER 'root'@'%' IDENTIFIED WITH mysql_native_password BY '123456';
+```
+
+- **step4：主机中创建slave用户：**
+
+```sql
+-- 创建slave用户
+-- 设置密码
+CREATE USER 'atguigu_slave'@'%' IDENTIFIED BY '123456';
+-- 授予复制权限
+GRANT REPLICATION SLAVE ON *.* TO 'atguigu_slave'@'%';
+-- 刷新权限
+FLUSH PRIVILEGES;
+```
+
+- **step5：主机中查询master状态：**
+
+执行完此步骤后`不要再操作主服务器MYSQL`，防止主服务器状态值变化
+
+```sql
+SHOW BINARY LOG STATUS;
+```
+
+记下`File`和`Position`的值。执行完此步骤后不要再操作主服务器MYSQL，防止主服务器状态值变化。
+
+```sql
+mysql> SHOW BINARY LOG STATUS;
++---------------+----------+--------------+------------------+-------------------+
+| File          | Position | Binlog_Do_DB | Binlog_Ignore_DB | Executed_Gtid_Set |
++---------------+----------+--------------+------------------+-------------------+
+| binlog.000003 |     1691 |              |                  |                   |
++---------------+----------+--------------+------------------+-------------------+
+```
+
+### 2.2、准备从服务器
+
+可以配置多台从机slave1、slave2...，这里以配置slave1为例
+
+- **step1：在docker中创建并启动MySQL从服务器：**`端口3307`
+
+```shell
+docker run -d \
+-p 3308:3306 \
+-v /root/docker/zc_mysql/slave1/conf:/etc/mysql/conf.d \
+-v /root/docker/zc_mysql/slave1/data:/var/lib/mysql \
+-e MYSQL_ROOT_PASSWORD=20010111 \
+--name atguigu-mysql-slave1 \
+mysql:latest
+```
+
+- **step2：创建MySQL从服务器配置文件：** 
+
+```shell
+vim /atguigu/mysql/slave1/conf/my.cnf
+```
+
+配置如下内容：
+
+```properties
+[mysqld]
+# 服务器唯一id，每台服务器的id必须不同，如果配置其他从机，注意修改id
+server-id=2
+# 中继日志名，默认xxxxxxxxxxxx-relay-bin
+#relay-log=relay-bin
+```
+
+重启MySQL容器
+
+```shell
+docker restart atguigu-mysql-slave1
+```
+
+- **step3：使用命令行登录MySQL从服务器：**
+
+```shell
+#进入容器：
+docker exec -it atguigu-mysql-slave1 env LANG=C.UTF-8 /bin/bash
+#进入容器内的mysql命令行
+mysql -uroot -p
+#修改默认密码校验方式
+ALTER USER 'root'@'%' IDENTIFIED WITH mysql_native_password BY '123456';
+```
+
+- **step4：在从机上配置主从关系：**
+
+在**从机**上执行以下SQL操作
+
+```sql
+CHANGE REPLICATION SOURCE TO
+  SOURCE_HOST='123.60.131.127',
+  SOURCE_PORT=3307,
+  SOURCE_USER='atguigu_slave',
+  SOURCE_PASSWORD='123456',
+  SOURCE_LOG_FILE='binlog.000003',
+  SOURCE_LOG_POS=1691;
+```
+
+### 2.2、准备从服务器2
+
+可以配置多台从机slave1、slave2...，这里以配置slave1为例
+
+- **step1：在docker中创建并启动MySQL从服务器：**`端口3309`
+
+```shell
+docker run -d \
+-p 3309:3306 \
+-v /root/docker/zc_mysql/slave2/conf:/etc/mysql/conf.d \
+-v /root/docker/zc_mysql/slave2/data:/var/lib/mysql \
+-e MYSQL_ROOT_PASSWORD=20010111 \
+--name atguigu-mysql-slave2 \
+mysql:latest
+```
+
+- **step2：创建MySQL从服务器配置文件：** 
+
+```shell
+vim /root/docker/zc_mysql/slave2/conf/my.cnf
+```
+
+配置如下内容：
+
+```properties
+[mysqld]
+# 服务器唯一id，每台服务器的id必须不同，如果配置其他从机，注意修改id
+server-id=3
+# 中继日志名，默认xxxxxxxxxxxx-relay-bin
+#relay-log=relay-bin
+```
+
+重启MySQL容器
+
+```shell
+docker restart atguigu-mysql-slave2
+```
+
+- **step3：使用命令行登录MySQL从服务器：**
+
+```shell
+#进入容器：
+docker exec -it atguigu-mysql-slave2 env LANG=C.UTF-8 /bin/bash
+#进入容器内的mysql命令行
+mysql -uroot -p
+#修改默认密码校验方式
+ALTER USER 'root'@'%' IDENTIFIED WITH mysql_native_password BY '123456';
+```
+
+- **step4：在从机上配置主从关系：**
+
+在**从机**上执行以下SQL操作
+
+```sql
+CHANGE REPLICATION SOURCE TO
+  SOURCE_HOST='123.60.131.127',
+  SOURCE_PORT=3307,
+  SOURCE_USER='atguigu_slave',
+  SOURCE_PASSWORD='123456',
+  SOURCE_LOG_FILE='binlog.000003',
+  SOURCE_LOG_POS=1691;
+```
+
+
+
 
 ## 9. 启动redis
 
